@@ -239,7 +239,6 @@ async def get_stream_link(
     )
 
 
-@timestamped()
 async def get_stream_links(
     torrents: list[Torrent],
     debrid_token: str,
@@ -252,9 +251,23 @@ async def get_stream_links(
     """
 
     links: dict[str, StreamLink] = {}
+
+    # wrap get_stream_link and ignore CancelledError
+    async def wrap_get_stream_link(
+        torrent: Torrent,
+        season_episode: list[int],
+        debrid_token: str,
+    ) -> Optional[StreamLink]:
+        try:
+            return await get_stream_link(
+                torrent=torrent, season_episode=season_episode, debrid_token=debrid_token
+            )
+        except asyncio.CancelledError:
+            return None
+
     tasks = [
         asyncio.create_task(
-            get_stream_link(
+            wrap_get_stream_link(
                 torrent=torrent,
                 season_episode=season_episode,
                 debrid_token=debrid_token,

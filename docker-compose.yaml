@@ -3,6 +3,7 @@ version: '3.8'
 volumes:
   jackett_config: {}
   redis_data: {}
+  jaeger_data: {}
 
 services:
   web:
@@ -12,12 +13,19 @@ services:
     depends_on:
       - redis
       - jackett
+      - jaeger
     volumes:
       - "redis_data:/app/data"
     environment:
       NUM_WORKERS: "16"
       LOG_LEVEL: debug
       REDIS_URL: "redis"
+      OTEL_RESOURCE_ATTRIBUTES: "deployment.environment=dev,service.namespace=annatar"
+      OTEL_SERVICE_NAME: "annatar"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      TRACING_SAMPLE_RATIO: "1.0"
       JACKETT_URL: "http://jackett:9117"
       JACKETT_API_KEY: e5jgcghy3oxbmv5dxm26dl64v0hp1ese 
       JACKETT_INDEXERS: >-
@@ -40,3 +48,36 @@ services:
       - 9117:9117
     volumes:
       - jackett_config:/config
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - 9090:9090
+    command:
+      - --web.enable-remote-write-receiver
+      - --enable-feature=otlp-write-receiver
+    volumes:
+      - ./prometheus.yaml:/prometheus/prometheus.yml
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    depends_on:
+      - prometheus
+    ports:
+      - "16686:16686"
+    user: "0"
+    environment:
+      LOG_LEVEL: "debug"
+      COLLECTOR_OTLP_ENABLED: "true"
+      SPAN_STORAGE_TYPE: "badger"
+      METRICS_STORAGE_TYPE: "prometheus"
+      PROMETHEUS_SERVER_URL: "http://prometheus:9090"
+      BADGER_EPHEMERAL: "false"
+      BADGER_DIRECTORY_VALUE: "/badger/data"
+      BADGER_DIRECTORY_KEY: "/badger/key"
+      BADGER_TTL: "24h"
+    volumes:
+      - jaeger_data:/badger
+    command:
+      - --prometheus.query.support-spanmetrics-connector=true
+

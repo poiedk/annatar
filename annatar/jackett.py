@@ -112,8 +112,21 @@ async def _search_indexer(
     )
 
     torrents: dict[str, Torrent] = {}
+
+    async def wrapped_map_matched_result(
+        result: SearchResult,
+        search_query: SearchQuery,
+        imdb: int | None,
+    ) -> Torrent | None:
+        try:
+            return await map_matched_result(result=result, search_query=search_query, imdb=imdb)
+        except asyncio.CancelledError:
+            return None
+
     tasks = [
-        asyncio.create_task(map_matched_result(result=result, search_query=search_query, imdb=imdb))
+        asyncio.create_task(
+            wrapped_map_matched_result(result=result, search_query=search_query, imdb=imdb)
+        )
         for result in search_results[: MAX_RESULTS * 2]
     ]
 
@@ -164,14 +177,33 @@ async def search_indexers(
 ) -> list[Torrent]:
     log.info("searching indexers", indexers=indexers)
     torrents: dict[str, Torrent] = {}
+
+    async def wrapped_search_indexer(
+        search_query: SearchQuery,
+        jackett_url: str,
+        jackett_api_key: str,
+        indexer: Indexer,
+        imdb: int | None,
+    ) -> list[Torrent]:
+        try:
+            return await search_indexer(
+                search_query=search_query,
+                jackett_url=jackett_url,
+                jackett_api_key=jackett_api_key,
+                indexer=indexer.id,
+                imdb=imdb,
+            )
+        except asyncio.CancelledError:
+            return []
+
     tasks = [
         asyncio.create_task(
-            search_indexer(
+            wrapped_search_indexer(
                 search_query=search_query,
                 jackett_url=jackett_url,
                 jackett_api_key=jackett_api_key,
                 imdb=imdb,
-                indexer=indexer.id,
+                indexer=indexer,
             )
         )
         for indexer in indexers
